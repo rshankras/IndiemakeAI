@@ -15,7 +15,7 @@ async function generateImageWithGemini(prompt: string, ai: any, Modality: any): 
         console.log(`Generating image for prompt: "${prompt}"`);
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash-image',
-            contents: { parts: [{ text: prompt }] },
+            contents: prompt,
             config: {
                 responseModalities: [Modality.IMAGE],
             },
