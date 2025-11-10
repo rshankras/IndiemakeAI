@@ -123,11 +123,9 @@ const ResultsDashboard: React.FC<ResultsDashboardProps> = ({ content, onGenerate
   const [activeTab, setActiveTab] = useState<Tab>('images');
   const { user, signInWithGoogle } = useAuth();
   const [isSaving, setIsSaving] = useState(false);
-  const [justSaved, setJustSaved] = useState(false);
-  const isSaved = !!content.id || justSaved;
+  const [isSaved, setIsSaved] = useState(false);
 
   const handleSaveCampaign = async () => {
-    if (isSaved) return;
     setIsSaving(true);
     let currentUser = user;
     if (!currentUser) {
@@ -136,7 +134,7 @@ const ResultsDashboard: React.FC<ResultsDashboardProps> = ({ content, onGenerate
     if (currentUser) {
         try {
             await saveCampaign(currentUser.uid, content);
-            setJustSaved(true);
+            setIsSaved(true);
         } catch (error) {
             console.error("Failed to save campaign:", error);
             alert("There was an error saving your campaign.");
@@ -159,7 +157,7 @@ const ResultsDashboard: React.FC<ResultsDashboardProps> = ({ content, onGenerate
   return (
     <div className="container mx-auto px-4 py-12">
       <div className="text-center mb-8">
-        <h2 className="text-3xl font-bold text-slate-800">Your <span className="text-blue-600">{content.appName}</span> Campaign is Ready!</h2>
+        <h2 className="text-3xl font-bold text-slate-800">Your Marketing Campaign is Ready!</h2>
         <p className="text-slate-600 mt-2">Explore your generated assets below.</p>
       </div>
       

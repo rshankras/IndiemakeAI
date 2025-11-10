@@ -4,7 +4,6 @@ export enum AppView {
   WIZARD = 'wizard',
   GENERATING = 'generating',
   RESULTS = 'results',
-  HISTORY = 'history',
 }
 
 export enum AppCategory {
@@ -92,9 +91,6 @@ export interface CampaignDay {
 }
 
 export interface GeneratedContent {
-    id?: string;
-    savedAt?: string;
-    appName: string;
     images: GeneratedImage[];
     captions: Caption[];
     hashtagSets: HashtagSet[];

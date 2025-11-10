@@ -1,4 +1,3 @@
-
 import { CampaignData, GeneratedContent, AppCategory } from '../types';
 import { marked } from 'marked';
 import { promptLibrary } from './prompt-library';
@@ -135,7 +134,6 @@ export const generateCampaign = async (data: CampaignData): Promise<GeneratedCon
 
   // --- 5. ASSEMBLE FINAL OBJECT ---
   const generatedContent: GeneratedContent = {
-    appName: data.appName,
     images: generatedImages,
     captions: generatedCaptions,
     hashtagSets: generatedHashtagSets,
