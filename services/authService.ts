@@ -1,65 +1,72 @@
+import { User as AppUser } from '../types';
+import { initializeApp } from 'firebase/app';
+import { 
+  getAuth, 
+  signInWithPopup, 
+  GoogleAuthProvider, 
+  onAuthStateChanged as onFirebaseAuthStateChanged,
+  signOut as firebaseSignOut,
+  User as FirebaseUser
+} from 'firebase/auth';
+import { firebaseConfig } from '../firebaseConfig';
 
-import { User } from '../types';
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const provider = new GoogleAuthProvider();
 
-// --- MOCK AUTHENTICATION SERVICE ---
-// This service simulates a third-party authentication provider like Firebase Auth.
-// It uses localStorage to persist the user session across page reloads.
+// --- REAL AUTHENTICATION SERVICE ---
+// This service uses the Firebase SDK to handle user authentication.
 
-const MOCK_USER: User = {
-  uid: '12345-abcde',
-  displayName: 'Alex Developer',
-  email: 'alex.dev@example.com',
-  photoURL: 'https://i.pravatar.cc/150?u=alexdeveloper',
+/**
+ * Maps a Firebase User object to our application's User type.
+ */
+const mapFirebaseUserToAppUser = (firebaseUser: FirebaseUser): AppUser => {
+    return {
+        uid: firebaseUser.uid,
+        displayName: firebaseUser.displayName,
+        email: firebaseUser.email,
+        photoURL: firebaseUser.photoURL,
+    };
 };
 
-let currentUser: User | null = JSON.parse(localStorage.getItem('indieMarkUser') || 'null');
-let authStateListener: ((user: User | null) => void) | null = null;
-
-const notifyListener = () => {
-  if (authStateListener) {
-    authStateListener(currentUser);
+/**
+ * Signs the user in with a Google popup.
+ */
+export const signInWithGoogle = async (): Promise<AppUser | null> => {
+  try {
+    const result = await signInWithPopup(auth, provider);
+    const user = result.user;
+    console.log("Sign-in successful:", user);
+    return mapFirebaseUserToAppUser(user);
+  } catch (error) {
+    console.error("Error during Google Sign-In:", error);
+    return null;
   }
 };
 
 /**
- * Simulates signing in with a Google popup.
- * In a real app, this would use the Firebase SDK: `signInWithPopup(auth, new GoogleAuthProvider())`.
- */
-export const signInWithGoogle = async (): Promise<User | null> => {
-  console.log("Simulating Google Sign-In...");
-  await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate network delay
-  currentUser = MOCK_USER;
-  localStorage.setItem('indieMarkUser', JSON.stringify(currentUser));
-  notifyListener();
-  console.log("Sign-in successful:", currentUser);
-  return currentUser;
-};
-
-/**
- * Simulates signing out.
- * In a real app, this would be `signOut(auth)`.
+ * Signs the user out.
  */
 export const signOut = async (): Promise<void> => {
-  console.log("Simulating Sign-Out...");
-  await new Promise(resolve => setTimeout(resolve, 500));
-  currentUser = null;
-  localStorage.removeItem('indieMarkUser');
-  notifyListener();
-  console.log("Sign-out successful.");
+  try {
+    await firebaseSignOut(auth);
+    console.log("Sign-out successful.");
+  } catch (error) {
+    console.error("Error during Sign-Out:", error);
+  }
 };
 
 /**
- * Simulates a real-time listener for authentication state changes.
- * In a real app, this would be `onAuthStateChanged(auth, callback)`.
+ * A real-time listener for authentication state changes.
  * It returns an `unsubscribe` function.
  */
-export const onAuthStateChanged = (callback: (user: User | null) => void): (() => void) => {
-  authStateListener = callback;
-  // Immediately notify the listener with the current state upon subscription
-  notifyListener();
-  
-  // Return a function to "unsubscribe" from the listener
-  return () => {
-    authStateListener = null;
-  };
+export const onAuthStateChanged = (callback: (user: AppUser | null) => void): (() => void) => {
+  return onFirebaseAuthStateChanged(auth, (firebaseUser) => {
+    if (firebaseUser) {
+      callback(mapFirebaseUserToAppUser(firebaseUser));
+    } else {
+      callback(null);
+    }
+  });
 };
