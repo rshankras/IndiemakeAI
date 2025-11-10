@@ -5,7 +5,8 @@ import LandingPage from './components/LandingPage';
 import Wizard from './components/Wizard';
 import GenerationScreen from './components/GenerationScreen';
 import ResultsDashboard from './components/ResultsDashboard';
-import { generateCampaign } from './services/geminiService';
+import ApiKeyModal from './components/ApiKeyModal';
+// Removed static import: import { generateCampaign } from './services/geminiService';
 import { DEFAULT_CAMPAIGN_DATA } from './constants';
 
 export const CampaignContext = React.createContext<{
@@ -20,25 +21,39 @@ const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>(AppView.LANDING);
   const [campaignData, setCampaignData] = useState<CampaignData>(DEFAULT_CAMPAIGN_DATA);
   const [generatedContent, setGeneratedContent] = useState<GeneratedContent | null>(null);
+  const [apiKey, setApiKey] = useState<string>('');
+  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState<boolean>(false);
 
   const handleStart = () => {
+    setIsApiKeyModalOpen(true);
+  };
+
+  const handleApiKeySave = (key: string) => {
+    setApiKey(key);
+    setIsApiKeyModalOpen(false);
     setCurrentView(AppView.WIZARD);
   };
 
   const handleGenerationStart = useCallback(async () => {
+    if (!apiKey) {
+      alert("API Key is missing. Please restart the process by refreshing the page and entering your key.");
+      setCurrentView(AppView.LANDING);
+      return;
+    }
     setCurrentView(AppView.GENERATING);
     try {
-      const content = await generateCampaign(campaignData);
+      // Lazy-load the service to prevent startup crashes.
+      const { generateCampaign } = await import('./services/geminiService');
+      const content = await generateCampaign(campaignData, apiKey);
       setGeneratedContent(content);
       setCurrentView(AppView.RESULTS);
     } catch (error) {
       console.error("Failed to generate campaign:", error);
       const message = error instanceof Error ? error.message : "An unknown error occurred during generation.";
-      // Provide a more informative error to the user
       alert(`There was an error generating the campaign: ${message}\n\nPlease check the console for more details and try again.`);
       setCurrentView(AppView.WIZARD);
     }
-  }, [campaignData]);
+  }, [campaignData, apiKey]);
 
   const handleGenerateAnother = () => {
     setCampaignData(DEFAULT_CAMPAIGN_DATA);
@@ -72,6 +87,12 @@ const App: React.FC = () => {
         <main>
           {renderContent()}
         </main>
+        {isApiKeyModalOpen && (
+          <ApiKeyModal 
+            onSave={handleApiKeySave} 
+            onClose={() => setIsApiKeyModalOpen(false)} 
+          />
+        )}
       </div>
     </CampaignContext.Provider>
   );

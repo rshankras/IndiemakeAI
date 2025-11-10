@@ -1,4 +1,5 @@
 
+import { GoogleGenAI, Modality } from '@google/genai';
 import { CampaignData, GeneratedContent, AppCategory } from '../types';
 import { marked } from 'marked';
 import { promptLibrary } from './prompt-library';
@@ -8,10 +9,9 @@ import { promptLibrary } from './prompt-library';
  * Generates a single image using the Gemini API and returns a data URL.
  * @param prompt The image generation prompt.
  * @param ai The initialized GoogleGenAI instance.
- * @param Modality The Modality enum from the dynamically imported SDK.
  * @returns A promise that resolves to a base64 data URL string.
  */
-async function generateImageWithGemini(prompt: string, ai: any, Modality: any): Promise<string> {
+async function generateImageWithGemini(prompt: string, ai: GoogleGenAI): Promise<string> {
     try {
         console.log(`Generating image for prompt: "${prompt}"`);
         const response = await ai.models.generateContent({
@@ -72,21 +72,13 @@ const fillTemplate = (template: string, replacements: Record<string, string>): s
 };
 
 
-export const generateCampaign = async (data: CampaignData): Promise<GeneratedContent> => {
-  // DYNAMIC IMPORT: Load the SDK only when needed to prevent load-time errors.
-  const { GoogleGenAI, Modality } = await import('@google/genai');
-  
-  // LAZY INITIALIZATION & SAFETY CHECK:
-  // Guard against 'process' not being defined in all browser environments.
-  const apiKey = (typeof process !== 'undefined' && process.env && process.env.API_KEY) 
-    ? process.env.API_KEY 
-    : undefined;
-
+export const generateCampaign = async (data: CampaignData, apiKey: string): Promise<GeneratedContent> => {
   if (!apiKey) {
-    console.error("API_KEY environment variable not set. This is a required configuration for the application to function.");
-    throw new Error("The application is not configured correctly. Missing API Key.");
+    console.error("API Key was not provided to generateCampaign function.");
+    throw new Error("A Gemini API Key is required to generate the campaign.");
   }
   
+  // LAZY INITIALIZATION: Connect to the API only when the function is called.
   const ai = new GoogleGenAI({ apiKey: apiKey });
   
   console.log("Starting campaign generation with data:", data);
@@ -113,7 +105,7 @@ export const generateCampaign = async (data: CampaignData): Promise<GeneratedCon
     return fillTemplate(templateData.template, replacements);
   }).filter((p): p is string => p !== null);
 
-  const imageGenerationPromises = imagePrompts.map(prompt => generateImageWithGemini(prompt, ai, Modality));
+  const imageGenerationPromises = imagePrompts.map(prompt => generateImageWithGemini(prompt, ai));
   const imageUrls = await Promise.all(imageGenerationPromises);
 
   const generatedImages = imageUrls.map((url, i) => ({
