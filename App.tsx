@@ -5,7 +5,6 @@ import LandingPage from './components/LandingPage';
 import Wizard from './components/Wizard';
 import GenerationScreen from './components/GenerationScreen';
 import ResultsDashboard from './components/ResultsDashboard';
-// Removed: import ApiKeyModal from './components/ApiKeyModal';
 import { DEFAULT_CAMPAIGN_DATA } from './constants';
 
 export const CampaignContext = React.createContext<{
@@ -21,14 +20,10 @@ const App: React.FC = () => {
   const [campaignData, setCampaignData] = useState<CampaignData>(DEFAULT_CAMPAIGN_DATA);
   const [generatedContent, setGeneratedContent] = useState<GeneratedContent | null>(null);
   
-  // Removed API Key state and modal state
-
   const handleStart = () => {
     // Directly go to the wizard, removing the API key modal step
     setCurrentView(AppView.WIZARD);
   };
-
-  // Removed handleApiKeySave function
 
   const handleGenerationStart = useCallback(async () => {
     setCurrentView(AppView.GENERATING);
@@ -80,7 +75,6 @@ const App: React.FC = () => {
         <main>
           {renderContent()}
         </main>
-        {/* Removed ApiKeyModal component from render */}
       </div>
     </CampaignContext.Provider>
   );
