@@ -1,3 +1,4 @@
+
 import { CampaignData, GeneratedContent, AppCategory } from '../types';
 import { marked } from 'marked';
 import { promptLibrary } from './prompt-library';
@@ -39,21 +40,22 @@ async function generateImageWithGemini(prompt: string, ai: any, Modality: any): 
 
 /**
  * Maps the AppCategory enum from the form to the keys used in the prompt library's categoryMappings.
+ * This is still used for selecting the best image prompt templates.
  * @param category The AppCategory enum value.
  * @returns The corresponding string key for the categoryMappings object.
  */
 const getCategoryKey = (category: AppCategory): string => {
     switch (category) {
         case AppCategory.FINANCE: return 'expense';
-        // Add other special mappings here if needed
         default:
             const key = category.toLowerCase();
-            return key in promptLibrary.categoryMappings ? key : 'productivity'; // Fallback to productivity
+            return key in promptLibrary.categoryMappings ? key : 'productivity'; // Fallback
     }
 };
 
 /**
  * Fills a template string with dynamic values from a replacements object.
+ * Still used for image prompt templates.
  * @param template The string containing {{placeholders}}.
  * @param replacements An object where keys match placeholder names.
  * @returns The filled template string.
@@ -63,58 +65,23 @@ const fillTemplate = (template: string, replacements: Record<string, string>): s
     for (const key in replacements) {
         result = result.replace(new RegExp(`{{${key}}}`, 'g'), replacements[key]);
     }
-    // Clean up any remaining, unfilled placeholders
     result = result.replace(/{{\w+}}/g, `[${replacements['appName'] || 'App'}'s Detail]`);
     return result;
 };
 
-// Static template for the quick reference guide
-const QUICK_REFERENCE_GUIDE_TEMPLATE = `
-# Quick Reference Guide
 
-Here's a summary of your best marketing assets to get you started.
-
-## Top 5 Prompts
-
-1.  **Generate an Instagram post announcing the launch of [App Name].** Focus on the main problem it solves. Use an [Tone] tone.
-2.  **Create a Twitter thread highlighting 3 key features of [App Name].** Make it engaging with emojis.
-3.  **Write a Reddit post for r/indiedev about the journey of building [App Name].** Be authentic and share challenges.
-4.  **Draft a short YouTube video script for a 30-second ad.** The visual style should be [Visual Style].
-5.  **Generate 5 different headline options for a Product Hunt launch.**
-
-## Top 5 Caption Templates
-
-1.  "Unlock [Benefit] with [App Name]. ✨ Our new [Feature] makes it easier than ever to [Action]. Link in bio! #[Hashtag1] #[Hashtag2]"
-2.  "Stop [Problem], start [Solution]. We built [App Name] for people who... Get it on the App Store today! #[IndieApp] #[YourNiche]"
-3.  "Behind the scenes of building [App Name]! It all started with... We're so excited to share it with you. #[DevLog] #[Startup]"
-4.  "User review of the day! ⭐⭐⭐⭐⭐ '[Quote from user]'. We love hearing from you! #[CustomerLove] #[AppReview]"
-5.  "Did you know? You can use [App Name] to [Unexpected Use Case]. Give it a try! #[AppHacks] #[ProTip]"
-
-## Hashtag Cheat Sheet
-
--   **General:** #IndieDev #AppLaunch #NewApp #Tech #MobileApp
--   **For [App Category]:** #[CategoryHashtag1] #[CategoryHashtag2]
--   **For [Primary Audience]:** #[AudienceHashtag1] #[AudienceHashtag2]
-`;
-
-
-export const generateCampaign = async (data: CampaignData, apiKey: string): Promise<GeneratedContent> => {
-    if (!apiKey) {
-        console.error("API Key was not provided to generateCampaign function.");
-        throw new Error("A Gemini API Key is required to generate the campaign.");
-    }
-    
+export const generateCampaign = async (data: CampaignData): Promise<GeneratedContent> => {
     // LAZY LOADING and INITIALIZATION: Import and connect to the API only when the function is called.
-    const { GoogleGenAI, Modality } = await import('@google/genai');
-    const ai = new GoogleGenAI({ apiKey: apiKey });
+    const { GoogleGenAI, Modality, Type } = await import('@google/genai');
+    // The API key MUST be obtained exclusively from the environment variable process.env.API_KEY
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
     console.log("Starting campaign generation with data:", data);
 
+    // --- 1. GENERATE IMAGES (in parallel, using existing prompt library for image ideas) ---
+    console.log("Generating image prompts...");
     const categoryKey = getCategoryKey(data.appCategory);
     const categoryMapping = promptLibrary.categoryMappings[categoryKey];
-
-    // --- 1. GENERATE IMAGES (in parallel) ---
-    console.log("Generating image prompts...");
     const imagePrompts = categoryMapping.bestImagePrompts.slice(0, 8).map((key) => {
         const promptCategory = Object.keys(promptLibrary.imagePrompts).find(cat => promptLibrary.imagePrompts[cat][key]);
         if (!promptCategory) return null;
@@ -127,13 +94,124 @@ export const generateCampaign = async (data: CampaignData, apiKey: string): Prom
             deviceType: promptLibrary.promptCustomizationRules.deviceTypeSelection[categoryKey] || 'iPhone',
             visualStyle: data.visualStyle,
             specificDetail: data.keyFeatures.split('\n')[0].replace('- ', ''),
-            aspectRatio: '1:1', // Using 1:1 for consistency
+            aspectRatio: '1:1',
         };
         return fillTemplate(templateData.template, replacements);
     }).filter((p): p is string => p !== null);
 
     const imageGenerationPromises = imagePrompts.map(prompt => generateImageWithGemini(prompt, ai, Modality));
-    const imageUrls = await Promise.all(imageGenerationPromises);
+    
+
+    // --- 2. GENERATE TEXTUAL CONTENT (using Gemini 2.5 Pro) ---
+    console.log("Generating textual content with Gemini Pro...");
+    const textGenerationPrompt = `
+        Based on the following application details, generate a complete marketing campaign.
+
+        **App Details:**
+        - **App Name:** ${data.appName}
+        - **App Category:** ${data.appCategory}
+        - **Key Features:**
+        ${data.keyFeatures}
+        - **Primary Audience:** ${data.primaryAudience.join(', ')}
+        - **Uniqueness:** ${data.uniqueness}
+        - **Competitors:** ${data.competitors || 'Not specified'}
+        - **Content Tone:** ${data.contentTone}
+        - **Visual Style:** ${data.visualStyle}
+        - **Target Platforms:** ${data.targetPlatforms.join(', ')}
+        - **Campaign Length:** ${data.campaignLength} days
+
+        **Request:**
+
+        Generate the following marketing assets:
+        1.  **Captions:** Create ${data.campaignLength} unique and engaging captions tailored to the specified tone and platforms.
+        2.  **Hashtag Sets:** Create 4 distinct sets of hashtags for different use cases (e.g., General, Niche-specific, Launch Day, Community).
+        3.  **Campaign Plan:** Create a day-by-day plan for a ${data.campaignLength}-day campaign with varied post types.
+        4.  **Quick Reference Guide:** Create a helpful guide in Markdown format that summarizes best practices, provides caption templates, and includes a hashtag cheat sheet, all customized for this specific app.
+
+        Provide the response in the specified JSON format.
+    `;
+
+    const responseSchema = {
+        type: Type.OBJECT,
+        properties: {
+            captions: {
+                type: Type.ARRAY,
+                description: "A list of social media captions for the campaign.",
+                items: {
+                    type: Type.OBJECT,
+                    properties: {
+                        text: {
+                            type: Type.STRING,
+                            description: "The full caption text. Should be engaging and relevant to the app."
+                        },
+                    },
+                    required: ['text']
+                }
+            },
+            hashtagSets: {
+                type: Type.ARRAY,
+                description: "Sets of hashtags for different use cases.",
+                items: {
+                    type: Type.OBJECT,
+                    properties: {
+                        useCase: {
+                            type: Type.STRING,
+                            description: "The use case for this set of hashtags (e.g., 'General', 'Productivity', 'Launch Day')."
+                        },
+                        hashtags: {
+                            type: Type.ARRAY,
+                            description: "A list of relevant hashtags, including the # symbol.",
+                            items: { type: Type.STRING }
+                        }
+                    },
+                    required: ['useCase', 'hashtags']
+                }
+            },
+            campaignPlan: {
+                type: Type.ARRAY,
+                description: `A day-by-day campaign plan for ${data.campaignLength} days.`,
+                items: {
+                    type: Type.OBJECT,
+                    properties: {
+                        day: { type: Type.INTEGER },
+                        postType: { 
+                            type: Type.STRING,
+                            description: "The type of post for the day (e.g., 'Problem Awareness', 'Feature Highlight', 'User Testimonial')."
+                        },
+                        captionPreview: {
+                            type: Type.STRING,
+                            description: "A short preview or summary of the caption for this day's post."
+                        },
+                        bestTimeToPost: {
+                            type: Type.STRING,
+                            description: "The recommended time to post on this day (e.g., '9:00 AM EST')."
+                        }
+                    },
+                    required: ['day', 'postType', 'captionPreview', 'bestTimeToPost']
+                }
+            },
+            quickReferenceGuide: {
+                type: Type.STRING,
+                description: "A helpful quick reference guide for the user in Markdown format. Include sections for caption templates and a hashtag cheat sheet."
+            }
+        },
+        required: ['captions', 'hashtagSets', 'campaignPlan', 'quickReferenceGuide']
+    };
+    
+    const textGenerationPromise = ai.models.generateContent({
+        model: 'gemini-2.5-pro',
+        contents: textGenerationPrompt,
+        config: {
+            responseMimeType: 'application/json',
+            responseSchema: responseSchema,
+        },
+    });
+
+    // --- 3. AWAIT ALL GENERATION AND ASSEMBLE ---
+    const [imageUrls, textResponse] = await Promise.all([
+        Promise.all(imageGenerationPromises),
+        textGenerationPromise,
+    ]);
 
     const generatedImages = imageUrls.map((url, i) => ({
         id: `img_${i + 1}`,
@@ -142,76 +220,36 @@ export const generateCampaign = async (data: CampaignData, apiKey: string): Prom
     }));
     console.log("Image generation complete.");
 
+    const generatedTextContent = JSON.parse(textResponse.text);
+    console.log("Text generation complete.");
 
-    // --- 2. GENERATE CAPTIONS & HASHTAGS ---
-    const hashtagSets = categoryMapping.hashtagSets.map(key => {
-        const template = promptLibrary.hashtagSets[key];
-        return fillTemplate(template, { AppName: data.appName.replace(/\s/g, '') });
-    });
-
-    const generatedCaptions = Array.from({ length: data.campaignLength }, (_, i) => {
-        const key = categoryMapping.bestCaptions[i % categoryMapping.bestCaptions.length];
-        const promptCategory = Object.keys(promptLibrary.captionTemplates).find(cat => promptLibrary.captionTemplates[cat][key]);
-        if (!promptCategory) return null;
-
-        const templateData = promptLibrary.captionTemplates[promptCategory][key];
-        const replacements = {
-            ...templateData.variables,
-            appName: data.appName,
-            whatItDoes: data.uniqueness,
-            hashtags: hashtagSets[i % hashtagSets.length] || '',
-        };
-        const filledCaption = fillTemplate(templateData.template, replacements);
-
-        return { id: `cap_${i + 1}`, text: filledCaption };
-    }).filter((c): c is { id: string; text: string; } => c !== null);
-
-    const generatedHashtagSets = categoryMapping.hashtagSets.map(key => {
-        const template = promptLibrary.hashtagSets[key];
-        const filled = fillTemplate(template, { AppName: data.appName.replace(/\s/g, '') });
-        return {
-            useCase: key.replace(/Focus$/, '').replace(/([A-Z])/g, ' $1').trim(),
-            hashtags: filled.split(' ').filter(h => h.startsWith('#')),
-        };
-    });
-
-    // --- 3. GENERATE CAMPAIGN PLAN ---
-    const weeklyMix = Object.values(promptLibrary.campaignStructures.weeklyContentMix);
-    const campaignPlan = Array.from({ length: data.campaignLength }, (_, i) => {
+    const generatedCaptions = generatedTextContent.captions.map((caption: { text: string }, i: number) => ({
+        id: `cap_${i + 1}`,
+        text: caption.text,
+    }));
+    
+    const campaignPlan = generatedTextContent.campaignPlan.map((day: any, i: number) => {
         const date = new Date();
         date.setDate(date.getDate() + i);
-        // Use a placeholder if not enough images were generated
-        const imageUrl = generatedImages[i % generatedImages.length]?.url || `https://picsum.photos/seed/${encodeURIComponent(data.appName)}${i}/200/200`;
         return {
-            day: i + 1,
+            ...day,
             date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-            postType: weeklyMix[i % weeklyMix.length].goal,
-            captionPreview: generatedCaptions[i % generatedCaptions.length]?.text.substring(0, 70) || '',
-            imagePreviewUrl: imageUrl,
-            bestTimeToPost: i % 2 === 0 ? '9:00 AM EST' : '1:00 PM EST',
+            imagePreviewUrl: generatedImages[i % generatedImages.length]?.url || `https://picsum.photos/seed/placeholder${i}/200/200`,
         };
     });
-
-    // --- 4. GENERATE QUICK REFERENCE GUIDE & PROMPT LIBRARY ---
-    const guideHtml = await marked(QUICK_REFERENCE_GUIDE_TEMPLATE
-        .replace(/\[App Name\]/g, data.appName)
-        .replace(/\[Tone\]/g, data.contentTone)
-        .replace(/\[Visual Style\]/g, data.visualStyle)
-        .replace(/\[App Category\]/g, data.appCategory)
-        .replace(/\[Primary Audience\]/g, data.primaryAudience.join(', '))
-    );
+    
+    const guideHtml = await marked(generatedTextContent.quickReferenceGuide);
 
     const finalPromptLibrary = {
         generated_image_prompts: generatedImages.map(img => img.prompt),
-        caption_templates_used: categoryMapping.bestCaptions,
+        text_generation_prompt_summary: "A dynamic prompt was generated based on user input to create captions, hashtags, a campaign plan, and a quick reference guide using gemini-2.5-pro.",
         user_input_summary: data,
     };
 
-    // --- 5. ASSEMBLE FINAL OBJECT ---
     const generatedContent: GeneratedContent = {
         images: generatedImages,
         captions: generatedCaptions,
-        hashtagSets: generatedHashtagSets,
+        hashtagSets: generatedTextContent.hashtagSets,
         campaignPlan: campaignPlan,
         quickReferenceGuide: guideHtml,
         promptLibrary: finalPromptLibrary,
