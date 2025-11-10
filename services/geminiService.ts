@@ -16,22 +16,18 @@ async function generateImageWithGemini(prompt: string, ai: GoogleGenAI): Promise
         console.log(`Generating image for prompt: "${prompt}"`);
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash-image',
-            contents: prompt,
+            contents: { parts: [{ text: prompt }] },
             config: {
                 responseModalities: [Modality.IMAGE],
             },
         });
 
-        // Check if response has candidates and content
-        if (response.candidates && response.candidates.length > 0) {
-            const parts = response.candidates[0].content.parts;
-            for (const part of parts) {
-                if (part.inlineData) {
-                    const base64ImageBytes: string = part.inlineData.data;
-                    const imageUrl = `data:image/png;base64,${base64ImageBytes}`;
-                    console.log(`Successfully generated image for prompt: "${prompt}"`);
-                    return imageUrl;
-                }
+        for (const part of response.candidates[0].content.parts) {
+            if (part.inlineData) {
+                const base64ImageBytes: string = part.inlineData.data;
+                const imageUrl = `data:image/png;base64,${base64ImageBytes}`;
+                console.log(`Successfully generated image for prompt: "${prompt}"`);
+                return imageUrl;
             }
         }
         throw new Error("No image data found in Gemini response.");
@@ -39,7 +35,7 @@ async function generateImageWithGemini(prompt: string, ai: GoogleGenAI): Promise
     } catch (error) {
         console.error(`Failed to generate image for prompt: "${prompt}"`, error);
         // Return a placeholder URL on failure to avoid breaking the UI
-        return `https://picsum.photos/seed/error-${Math.random()}/500/500`;
+        return `https://picsum.photos/seed/error-${Math.random()}/500/500`; 
     }
 }
 
