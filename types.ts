@@ -1,4 +1,3 @@
-
 export enum AppView {
   LANDING = 'landing',
   WIZARD = 'wizard',
@@ -97,11 +96,4 @@ export interface GeneratedContent {
     campaignPlan: CampaignDay[];
     quickReferenceGuide: string; // Markdown content
     promptLibrary: Record<string, any>; // JSON content
-}
-
-export interface User {
-  uid: string;
-  displayName: string | null;
-  email: string | null;
-  photoURL: string | null;
 }

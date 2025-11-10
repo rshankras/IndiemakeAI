@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback, useContext } from 'react';
+import React, { useState, useCallback } from 'react';
 import { AppView, CampaignData, GeneratedContent } from './types';
 import LandingPage from './components/LandingPage';
 import Wizard from './components/Wizard';
@@ -7,8 +7,6 @@ import GenerationScreen from './components/GenerationScreen';
 import ResultsDashboard from './components/ResultsDashboard';
 import { generateCampaign } from './services/geminiService';
 import { DEFAULT_CAMPAIGN_DATA } from './constants';
-import { AuthProvider, useAuth } from './AuthContext';
-import { ArrowRightOnRectangleIcon, UserCircleIcon } from './components/icons';
 
 export const CampaignContext = React.createContext<{
   campaignData: CampaignData;
@@ -18,11 +16,10 @@ export const CampaignContext = React.createContext<{
   setCampaignData: () => {},
 });
 
-const AppContent: React.FC = () => {
+const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>(AppView.LANDING);
   const [campaignData, setCampaignData] = useState<CampaignData>(DEFAULT_CAMPAIGN_DATA);
   const [generatedContent, setGeneratedContent] = useState<GeneratedContent | null>(null);
-  const { user, signOut } = useAuth();
 
   const handleStart = () => {
     setCurrentView(AppView.WIZARD);
@@ -36,6 +33,9 @@ const AppContent: React.FC = () => {
       setCurrentView(AppView.RESULTS);
     } catch (error) {
       console.error("Failed to generate campaign:", error);
+      const message = error instanceof Error ? error.message : "An unknown error occurred during generation.";
+      // Provide a more informative error to the user
+      alert(`There was an error generating the campaign: ${message}\n\nPlease check the console for more details and try again.`);
       setCurrentView(AppView.WIZARD);
     }
   }, [campaignData]);
@@ -61,27 +61,12 @@ const AppContent: React.FC = () => {
     }
   };
 
-  const UserMenu = () => (
-    <div className="flex items-center gap-4">
-      {user?.photoURL ? (
-        <img src={user.photoURL} alt={user.displayName || 'User'} className="h-8 w-8 rounded-full" />
-      ) : (
-        <UserCircleIcon className="h-8 w-8 text-slate-500" />
-      )}
-      <button onClick={signOut} className="flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-blue-600">
-        <ArrowRightOnRectangleIcon className="h-5 w-5" />
-        Logout
-      </button>
-    </div>
-  );
-
   return (
     <CampaignContext.Provider value={{ campaignData, setCampaignData }}>
       <div className="min-h-screen bg-slate-50 text-slate-800 font-sans">
         <header className="p-4 border-b border-slate-200 bg-white">
           <div className="container mx-auto flex justify-between items-center">
             <h1 className="text-2xl font-bold text-slate-900">IndieMark AI</h1>
-            {user && <UserMenu />}
           </div>
         </header>
         <main>
@@ -91,11 +76,5 @@ const AppContent: React.FC = () => {
     </CampaignContext.Provider>
   );
 };
-
-const App: React.FC = () => (
-  <AuthProvider>
-    <AppContent />
-  </AuthProvider>
-);
 
 export default App;

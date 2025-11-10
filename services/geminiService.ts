@@ -1,9 +1,44 @@
+
 import { CampaignData, GeneratedContent, AppCategory } from '../types';
 import { marked } from 'marked';
 import { promptLibrary } from './prompt-library';
 
-// This is a mock service that uses the prompt library to simulate AI generation.
-// In a real application, the filled prompts would be sent to the Gemini and Imagen APIs.
+// --- REAL GEMINI IMAGE GENERATION SERVICE ---
+/**
+ * Generates a single image using the Gemini API and returns a data URL.
+ * @param prompt The image generation prompt.
+ * @param ai The initialized GoogleGenAI instance.
+ * @param Modality The Modality enum from the dynamically imported SDK.
+ * @returns A promise that resolves to a base64 data URL string.
+ */
+async function generateImageWithGemini(prompt: string, ai: any, Modality: any): Promise<string> {
+    try {
+        console.log(`Generating image for prompt: "${prompt}"`);
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-image',
+            contents: { parts: [{ text: prompt }] },
+            config: {
+                responseModalities: [Modality.IMAGE],
+            },
+        });
+
+        for (const part of response.candidates[0].content.parts) {
+            if (part.inlineData) {
+                const base64ImageBytes: string = part.inlineData.data;
+                const imageUrl = `data:image/png;base64,${base64ImageBytes}`;
+                console.log(`Successfully generated image for prompt: "${prompt}"`);
+                return imageUrl;
+            }
+        }
+        throw new Error("No image data found in Gemini response.");
+
+    } catch (error) {
+        console.error(`Failed to generate image for prompt: "${prompt}"`, error);
+        // Return a placeholder URL on failure to avoid breaking the UI
+        return `https://picsum.photos/seed/error-${Math.random()}/500/500`; 
+    }
+}
+
 
 /**
  * Maps the AppCategory enum from the form to the keys used in the prompt library's categoryMappings.
@@ -38,16 +73,30 @@ const fillTemplate = (template: string, replacements: Record<string, string>): s
 
 
 export const generateCampaign = async (data: CampaignData): Promise<GeneratedContent> => {
-  console.log("Starting campaign generation with data:", data);
+  // DYNAMIC IMPORT: Load the SDK only when needed to prevent load-time errors.
+  const { GoogleGenAI, Modality } = await import('@google/genai');
+  
+  // LAZY INITIALIZATION & SAFETY CHECK:
+  // Guard against 'process' not being defined in all browser environments.
+  const apiKey = (typeof process !== 'undefined' && process.env && process.env.API_KEY) 
+    ? process.env.API_KEY 
+    : undefined;
 
-  // Simulate API call delay
-  await new Promise(resolve => setTimeout(resolve, 5000));
+  if (!apiKey) {
+    console.error("API_KEY environment variable not set. This is a required configuration for the application to function.");
+    throw new Error("The application is not configured correctly. Missing API Key.");
+  }
+  
+  const ai = new GoogleGenAI({ apiKey: apiKey });
+  
+  console.log("Starting campaign generation with data:", data);
 
   const categoryKey = getCategoryKey(data.appCategory);
   const categoryMapping = promptLibrary.categoryMappings[categoryKey];
 
-  // --- 1. GENERATE IMAGES ---
-  const generatedImages = categoryMapping.bestImagePrompts.slice(0, 8).map((key, i) => {
+  // --- 1. GENERATE IMAGES (in parallel) ---
+  console.log("Generating image prompts...");
+  const imagePrompts = categoryMapping.bestImagePrompts.slice(0, 8).map((key) => {
     const promptCategory = Object.keys(promptLibrary.imagePrompts).find(cat => promptLibrary.imagePrompts[cat][key]);
     if (!promptCategory) return null;
 
@@ -59,16 +108,21 @@ export const generateCampaign = async (data: CampaignData): Promise<GeneratedCon
         deviceType: promptLibrary.promptCustomizationRules.deviceTypeSelection[categoryKey] || 'iPhone',
         visualStyle: data.visualStyle,
         specificDetail: data.keyFeatures.split('\n')[0].replace('- ', ''),
-        aspectRatio: '4:5',
+        aspectRatio: '1:1', // Using 1:1 for consistency
     };
-    const filledPrompt = fillTemplate(templateData.template, replacements);
+    return fillTemplate(templateData.template, replacements);
+  }).filter((p): p is string => p !== null);
 
-    return {
-      id: `img_${i + 1}`,
-      url: `https://picsum.photos/seed/${encodeURIComponent(data.appName)}${i}/500/500`,
-      prompt: filledPrompt,
-    };
-  }).filter(Boolean);
+  const imageGenerationPromises = imagePrompts.map(prompt => generateImageWithGemini(prompt, ai, Modality));
+  const imageUrls = await Promise.all(imageGenerationPromises);
+
+  const generatedImages = imageUrls.map((url, i) => ({
+    id: `img_${i + 1}`,
+    url: url,
+    prompt: imagePrompts[i] || "N/A",
+  }));
+  console.log("Image generation complete.");
+
 
   // --- 2. GENERATE CAPTIONS & HASHTAGS ---
   const hashtagSets = categoryMapping.hashtagSets.map(key => {
@@ -107,12 +161,14 @@ export const generateCampaign = async (data: CampaignData): Promise<GeneratedCon
   const campaignPlan = Array.from({ length: data.campaignLength }, (_, i) => {
     const date = new Date();
     date.setDate(date.getDate() + i);
+    // Use a placeholder if not enough images were generated
+    const imageUrl = generatedImages[i % generatedImages.length]?.url || `https://picsum.photos/seed/${encodeURIComponent(data.appName)}${i}/200/200`;
     return {
         day: i + 1,
         date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
         postType: weeklyMix[i % weeklyMix.length].goal,
         captionPreview: generatedCaptions[i % generatedCaptions.length]?.text.substring(0, 70) || '',
-        imagePreviewUrl: generatedImages[i % generatedImages.length]?.url.replace('/500/500', '/200/200') || '',
+        imagePreviewUrl: imageUrl,
         bestTimeToPost: i % 2 === 0 ? '9:00 AM EST' : '1:00 PM EST',
     };
   });
